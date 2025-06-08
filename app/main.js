@@ -1,175 +1,186 @@
 const readline = require("readline");
-const fs = require("fs");
-const path = require("path");
 const { spawn } = require("child_process");
+const path = require("path");
+const fs = require("fs");
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
+  prompt: "$ ",
 });
 
-const builtins = ["echo", "exit", "type", "pwd", "cd"];
+const builtins = new Set(["echo", "exit", "type", "pwd", "cd"]);
 
-function parseArgs(input) {
+function parseCommandLine(input) {
   const args = [];
   let current = "";
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
   let i = 0;
-
+  let state = "normal";
   while (i < input.length) {
-    const char = input[i];
-
-    if (inSingleQuote) {
-      if (char === "'") {
-        inSingleQuote = false;
-      } else {
-        current += char;
-      }
-      i++;
-      continue;
-    }
-
-    if (inDoubleQuote) {
-      if (char === '"') {
-        inDoubleQuote = false;
+    const c = input[i];
+    if (state === "normal") {
+      if (c === "'") {
+        state = "single_quote";
+      } else if (c === '"') {
+        state = "double_quote";
+      } else if (c === "\\") {
         i++;
-        continue;
-      }
-      if (char === '\\') {
-        const nextChar = input[i + 1];
-        if (nextChar === '\\' || nextChar === '"' || nextChar === '$' || nextChar === '\n') {
-          current += nextChar;
-          i += 2;
-        } else {
-          current += char;
-          i++;
+        if (i < input.length) {
+          current += input[i];
         }
-        continue;
+      } else if (/\s/.test(c)) {
+        if (current.length > 0) {
+          args.push(current);
+          current = "";
+        }
+      } else {
+        current += c;
       }
-      current += char;
-      i++;
-      continue;
-    }
-
-    if (char === "'") {
-      inSingleQuote = true;
-      i++;
-    } else if (char === '"') {
-      inDoubleQuote = true;
-      i++;
-    } else if (char === ' ') {
-      if (current !== "") {
-        args.push(current);
-        current = "";
+    } else if (state === "single_quote") {
+      if (c === "'") {
+        state = "normal";
+      } else {
+        current += c;
       }
-      i++;
-      while (input[i] === ' ') i++;
-    } else {
-      current += char;
-      i++;
+    } else if (state === "double_quote") {
+      if (c === '"') {
+        state = "normal";
+      } else if (c === "\\") {
+        i++;
+        if (i < input.length) {
+          const next = input[i];
+          if (next === "\\" || next === "$" || next === '"' || next === "\n") {
+            current += next;
+          } else {
+            current += "\\" + next;
+          }
+        }
+      } else {
+        current += c;
+      }
     }
+    i++;
   }
-
-  if (current !== "") {
+  if (current.length > 0) {
     args.push(current);
   }
-
   return args;
 }
 
-function isExecutable(filePath) {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
+function findExecutable(cmd) {
+  if (cmd.includes("/")) {
+    try {
+      if (
+        fs.existsSync(cmd) &&
+        fs.statSync(cmd).isFile() &&
+        fs.accessSync(cmd, fs.constants.X_OK) === undefined
+      ) {
+        return path.resolve(cmd);
+      }
+    } catch {}
+    return null;
   }
-}
-
-function findExecutable(command) {
-  const pathDirs = process.env.PATH ? process.env.PATH.split(":") : [];
-  for (const dir of pathDirs) {
-    const fullPath = path.join(dir, command);
-    if (fs.existsSync(fullPath) && isExecutable(fullPath)) {
-      return fullPath;
-    }
+  const pathEnv = process.env.PATH || "";
+  const dirs = pathEnv.split(":");
+  for (const dir of dirs) {
+    const fullPath = path.join(dir, cmd);
+    try {
+      if (
+        fs.existsSync(fullPath) &&
+        fs.statSync(fullPath).isFile() &&
+        (() => {
+          try {
+            fs.accessSync(fullPath, fs.constants.X_OK);
+            return true;
+          } catch {
+            return false;
+          }
+        })()
+      ) {
+        return fullPath;
+      }
+    } catch {}
   }
   return null;
 }
 
-const prompt = () => {
-  rl.question("$ ", (input) => {
-    if (!input.trim()) {
-      prompt();
+function handleTypeCommand(cmd) {
+  if (builtins.has(cmd)) {
+    console.log(`${cmd} is a shell builtin`);
+  } else {
+    const exePath = findExecutable(cmd);
+    if (exePath) {
+      console.log(`${cmd} is ${exePath}`);
+    } else {
+      console.log(`${cmd}: not found`);
+    }
+  }
+}
+
+function changeDirectory(target) {
+  let dir = target;
+  if (dir === "~") {
+    dir = process.env.HOME || "";
+  }
+  try {
+    process.chdir(dir);
+  } catch {
+    console.log(`cd: ${target}: No such file or directory`);
+  }
+}
+
+function mainLoop() {
+  rl.prompt();
+  rl.on("line", (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      rl.prompt();
       return;
     }
-
-    const args = parseArgs(input.trim());
+    const args = parseCommandLine(trimmed);
     const cmd = args[0];
-    const cmdArgs = args.slice(1);
-
-    if (cmd === "exit" && cmdArgs[0] === "0") {
+    if (cmd === "exit") {
       process.exit(0);
     } else if (cmd === "echo") {
-      console.log(cmdArgs.join(" "));
+      console.log(args.slice(1).join(" "));
+      rl.prompt();
+    } else if (cmd === "type") {
+      if (args.length < 2) {
+        rl.prompt();
+        return;
+      }
+      handleTypeCommand(args[1]);
+      rl.prompt();
     } else if (cmd === "pwd") {
       console.log(process.cwd());
+      rl.prompt();
     } else if (cmd === "cd") {
-      const targetPath = cmdArgs[0];
-
-      if (!targetPath) {
-        console.log("cd: missing operand");
+      if (args.length < 2) {
+        changeDirectory("~");
       } else {
-        let resolvedPath = targetPath;
-        if (targetPath === "~") {
-          resolvedPath = process.env.HOME;
-        }
-
-        try {
-          process.chdir(resolvedPath);
-        } catch (err) {
-          console.log(`cd: ${targetPath}: No such file or directory`);
-        }
+        changeDirectory(args[1]);
       }
-    } else if (cmd === "type") {
-      const target = cmdArgs[0];
-      if (!target) {
-        console.log("type: missing operand");
-      } else if (builtins.includes(target)) {
-        console.log(`${target} is a shell builtin`);
-      } else {
-        const exePath = findExecutable(target);
-        if (exePath) {
-          console.log(`${target} is ${exePath}`);
-        } else {
-          console.log(`${target}: not found`);
-        }
-      }
-    } else if (builtins.includes(cmd)) {
-      console.log(`${cmd}: shell builtin but invalid usage`);
+      rl.prompt();
     } else {
       const exePath = findExecutable(cmd);
       if (exePath) {
-        const child = spawn(cmd, cmdArgs, { stdio: "inherit" });
-
-        child.on("error", (err) => {
-          console.error(`Failed to start: ${err}`);
-          prompt();
+        const child = spawn(exePath, args.slice(1), {
+          stdio: "inherit",
+          argv0: path.basename(exePath),
         });
-
-        child.on("close", () => {
-          prompt();
+        child.on("exit", () => {
+          rl.prompt();
         });
-
-        return;
+        child.on("error", () => {
+          console.log(`${cmd}: command not found`);
+          rl.prompt();
+        });
       } else {
         console.log(`${cmd}: command not found`);
+        rl.prompt();
       }
     }
-
-    prompt();
   });
-};
+}
 
-prompt();
+mainLoop();
