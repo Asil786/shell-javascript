@@ -1,4 +1,3 @@
-import readline from "readline";
 const pathVariable = process.env.PATH;
 import {getFullPath} from "./utils/getFullPath.js";
 import {commandMap} from "./commandMap.js";
