@@ -80,10 +80,10 @@ function prompt() {
         let current = '';
         let inSingle = false;
         let inDouble = false;
-
+      
         while (i < input.length) {
           const char = input[i];
-
+      
           if (inSingle) {
             if (char === "'") {
               inSingle = false;
@@ -95,7 +95,7 @@ function prompt() {
           } else if (inDouble) {
             if (char === '\\' && i + 1 < input.length) {
               const next = input[i + 1];
-              if (['\\', '"', '$'].includes(next)) {
+              if (next === '"' || next === '\\' || next === '$') {
                 current += next;
                 i++;
               } else {
@@ -123,19 +123,23 @@ function prompt() {
               current += char;
             }
           }
-
+      
           i++;
         }
-
+      
         if (current !== '') {
           args.push(current);
         }
-
+      
         return args;
       }
+      
 
       const rawInput = answer.slice(5); // remove 'echo '
       const args = parseArgs(rawInput);
+      console.log(args.join(' '));
+      // const rawInput = answer.slice(5); // remove 'echo '
+      // const args = parseArgs(rawInput);
 
       // Reconstruct output, preserving spacing between arguments
       let result = "";
