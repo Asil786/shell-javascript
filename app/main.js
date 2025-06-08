@@ -1,207 +1,173 @@
-const { exit } = require("process");
 const readline = require("readline");
+const { exit } = require("process");
 const path = require("path");
 const fs = require("fs");
-const { execFileSync } = require("child_process");
-const os = require("os");
+const { execSync } = require("child_process");
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-function cat(files) {
-  var data = "";
-  let filesLen = 0;
-  while (filesLen < files.length) {
-    try {
-      if (fs.existsSync(files[filesLen])) {
-        data += fs.readFileSync(files[filesLen], "utf-8");
+const builtin = ["cd", "echo", "exit", "pwd", "type"];
+
+// Utility to parse shell-like arguments (handles quotes and escapes)
+function parseArgs(input) {
+  const args = [];
+  let current = "";
+  let inSingle = false;
+  let inDouble = false;
+  let i = 0;
+
+  while (i < input.length) {
+    const char = input[i];
+
+    if (inSingle) {
+      if (char === "'") {
+        inSingle = false;
       } else {
-        data += "File does not exists.";
+        current += char;
       }
-    } catch (err) {
-      data += `Error reading file ${files[filesLen]}:`, err;
-      return;
+    } else if (inDouble) {
+      if (char === '\\') {
+        const next = input[i + 1];
+        if (next === '"' || next === '\\' || next === '$' || next === '`') {
+          current += next;
+          i++;
+        } else {
+          current += char;
+        }
+      } else if (char === '"') {
+        inDouble = false;
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === "'") {
+        inSingle = true;
+      } else if (char === '"') {
+        inDouble = true;
+      } else if (char === " ") {
+        if (current.length > 0) {
+          args.push(current);
+          current = "";
+        }
+      } else {
+        current += char;
+      }
     }
-    filesLen += 1;
+    i++;
   }
-  process.stdout.write(data);
-  prompt();
+
+  if (current.length > 0) {
+    args.push(current);
+  }
+
+  return args;
+}
+
+function handleCd(inPath) {
+  if (inPath === "~") {
+    inPath = process.env.HOME || "/home/user";
+  }
+
+  const newPath = path.resolve(process.cwd(), inPath);
+  if (fs.existsSync(newPath) && fs.statSync(newPath).isDirectory()) {
+    process.chdir(newPath);
+    return null;
+  } else {
+    return `cd: ${newPath}: No such file or directory`;
+  }
+}
+
+function handleEcho(args) {
+  return args.join(" ");
+}
+
+function handleExit() {
+  exit(0);
+}
+
+function handlePwd() {
+  return process.cwd();
+}
+
+function handleType(command) {
+  if (builtin.includes(command)) {
+    return `${command} is a shell builtin`;
+  } else {
+    let exists = false;
+    let finalPath = null;
+
+    const paths = process.env.PATH.split(":");
+
+    for (const p of paths) {
+      const commandPath = path.join(p, command);
+      if (fs.existsSync(commandPath) && fs.statSync(commandPath).isFile()) {
+        exists = true;
+        finalPath = commandPath;
+        break;
+      }
+    }
+
+    if (exists) {
+      return `${command} is ${finalPath}`;
+    } else {
+      return `${command}: not found`;
+    }
+  }
+}
+
+function handleFile(answer) {
+  const args = parseArgs(answer);
+  const fileName = args[0];
+  const paths = process.env.PATH.split(":");
+
+  for (const p of paths) {
+    const candidatePath = path.join(p, fileName);
+    if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile()) {
+      try {
+        const result = execSync(args.map(arg => `"${arg}"`).join(" "), {
+          stdio: "pipe",
+        }).toString().trim();
+        return { isFile: true, fileResult: result };
+      } catch (e) {
+        return { isFile: true, fileResult: e.message };
+      }
+    }
+  }
+
+  return { isFile: false, fileResult: null };
 }
 
 function prompt() {
   rl.question("$ ", (answer) => {
-    const inLst = ["echo", "exit", "type", "pwd"];
-    const paths = process.env.PATH.split(":");
-    const [commandType, text] = answer.split(" ");
-    const args = answer.split(" ").slice(1);
-    const targetPath = paths.filter((path) => fs.existsSync(`${path}/${text}`));
-    let found = false;
+    const args = parseArgs(answer);
+    const command = args[0];
 
-    if (answer == "exit 0") {
-      exit(0);
-    } else if (answer == "pwd") {
-      console.log(process.cwd());
-      prompt();
-    } else if (commandType == "cd") {
-      if (text.startsWith(".")) {
-        const filePath = path.join(process.cwd(), text);
-        try {
-          process.chdir(filePath);
-        } catch {
-          console.log(`cd: ${filePath}: No such file or directory`);
-        }
-        prompt();
-      } else if (text == "~") {
-        process.chdir(os.homedir());
-        prompt();
+    let result = null;
+
+    if (command === "exit" && args[1] === "0") {
+      handleExit();
+    } else if (command === "cd") {
+      result = handleCd(args[1]);
+    } else if (command === "echo") {
+      result = handleEcho(args.slice(1));
+    } else if (command === "pwd") {
+      result = handlePwd();
+    } else if (command === "type") {
+      result = handleType(args[1]);
+    } else {
+      const { isFile, fileResult } = handleFile(answer);
+      if (!isFile) {
+        result = `${command}: command not found`;
       } else {
-        if (fs.existsSync(text) && fs.statSync(text).isDirectory()) {
-          process.chdir(text);
-        } else {
-          console.log(`cd: ${text}: No such file or directory`);
-        }
-        prompt();
+        result = fileResult;
       }
-    } else if (commandType === "cat") {
-      const catText = answer.split("cat ");
-      let files = [];
-      if (catText[1].startsWith("'")) {
-        files = answer.split("'").slice(1).filter((item) => item !== "" && item !== " ");
-      } else {
-        files = answer.split('"').slice(1).filter((item) => item !== "" && item !== " ");
-      }
-      cat(files);
-    } else if (commandType === "echo") {
-      function parseArgs(input) {
-        const args = [];
-        let i = 0;
-        let current = '';
-        let inSingle = false;
-        let inDouble = false;
-      
-        while (i < input.length) {
-          const char = input[i];
-      
-          if (inSingle) {
-            if (char === "'") {
-              inSingle = false;
-              args.push(current);
-              current = '';
-            } else {
-              current += char;
-            }
-          } else if (inDouble) {
-            if (char === '\\' && i + 1 < input.length) {
-              const next = input[i + 1];
-              if (next === '"' || next === '\\' || next === '$') {
-                current += next;
-                i++;
-              } else {
-                current += '\\' + next;
-                i++;
-              }
-            } else if (char === '"') {
-              inDouble = false;
-              args.push(current);
-              current = '';
-            } else {
-              current += char;
-            }
-          } else {
-            if (char === "'") {
-              inSingle = true;
-            } else if (char === '"') {
-              inDouble = true;
-            } else if (char === ' ') {
-              if (current !== '') {
-                args.push(current);
-                current = '';
-              }
-            } else {
-              current += char;
-            }
-          }
-      
-          i++;
-        }
-      
-        if (current !== '') {
-          args.push(current);
-        }
-      
-        return args;
-      }
-      
-
-      const rawInput = answer.slice(5); // remove 'echo '
-      const args = parseArgs(rawInput);
-      console.log(args.join(' '));
-      // const rawInput = answer.slice(5); // remove 'echo '
-      // const args = parseArgs(rawInput);
-
-      // Reconstruct output, preserving spacing between arguments
-      let result = "";
-      let lastIndex = 5;
-      for (const arg of args) {
-        const index = answer.indexOf(arg, lastIndex);
-        if (index > lastIndex) {
-          result += answer.slice(lastIndex, index); // preserve spaces
-        }
-        result += arg;
-        lastIndex = index + arg.length;
-      }
-
-      console.log(result.trimEnd());
-      prompt();
-    } else if (commandType.slice(1) == "exe") {
-      const exeLst = answer.split(/['"]/g);
-      const files = exeLst[exeLst.length - 1].trim();
-      let data = "";
-      try {
-        if (fs.existsSync(files)) {
-          data = fs.readFileSync(files, "utf-8");
-        } else {
-          data = "File does not exists.";
-        }
-      } catch (err) {
-        data = `Error reading file ${files}: ${err}`;
-        return;
-      }
-      process.stdout.write(data);
-      prompt();
-    } else if (answer.startsWith("type ")) {
-      if (inLst.includes(text)) {
-        console.log(`${text} is a shell builtin`);
-      } else {
-        for (const pathEnv of paths) {
-          let destPath = path.join(pathEnv, text);
-          if (fs.existsSync(destPath) && fs.statSync(destPath).isFile() && !found) {
-            console.log(`${text} is ${destPath}`);
-            found = true;
-          }
-        }
-        if (!found) {
-          console.log(`${text}: not found`);
-        }
-      }
-      prompt();
-    } else if (!targetPath.length) {
-      found = false;
-      for (const pathEnv of paths) {
-        let destPath = path.join(pathEnv, commandType);
-        if (fs.existsSync(destPath) && fs.statSync(destPath).isFile() && !found) {
-          found = true;
-          execFileSync(commandType, args, { encoding: "utf-8", stdio: "inherit" });
-        }
-      }
-      if (!found) {
-        console.log(`${answer}: command not found`);
-        prompt();
-      }
-      prompt();
     }
+
+    if (result !== null) console.log(result);
+    prompt();
   });
 }
 
