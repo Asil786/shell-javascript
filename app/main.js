@@ -77,15 +77,7 @@ function prompt(){
       }
       cat(files);    
     } else if(commandType === "echo"){
-      const args = parseArgs(answer.slice(5));
-      let output = '';
-      for (let i = 0; i < args.length; i++) {
-        output += args[i];
-        if (i < args.length - 1 && answer.includes(' ')) {
-          output += ' ';
-        }
-      }
-      console.log(output.trimEnd());
+      
       // const escSqs = ["\", "$", '"', "\n"];
       const echoText = answer.split("echo ");      
       if (echoText[1].startsWith("'")) {
