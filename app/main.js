@@ -69,13 +69,12 @@ function findExecutable(command) {
   let unquotedCommand = command;
   
   // Remove only outer quotes, preserve inner quotes
-  if ((command.startsWith('"') && command.endsWith('"')) {
+  if (command.startsWith('"') && command.endsWith('"')) {
     unquotedCommand = command.slice(1, -1);
     // Unescape escaped double quotes inside
     unquotedCommand = unquotedCommand.replace(/\\"/g, '"');
-  } else if ((command.startsWith("'") && command.endsWith("'"))) {
+  } else if (command.startsWith("'") && command.endsWith("'")) {
     unquotedCommand = command.slice(1, -1);
-    // Single quotes preserve everything literally
   }
 
   // If command contains path separators, treat as direct path
@@ -188,4 +187,4 @@ function prompt() {
   });
 }
 
-prompt();
+prompt(); 
