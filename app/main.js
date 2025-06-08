@@ -2,7 +2,7 @@ const readline = require("readline");
 const { exit } = require("process");
 const path = require("path");
 const fs = require("fs");
-const { execFileSync } = require("child_process");
+const { execSync } = require("child_process");
 const os = require("os");
 
 const rl = readline.createInterface({
@@ -31,7 +31,7 @@ function parseArgs(input) {
     } else if (inDouble) {
       if (char === "\\") {
         const next = input[i + 1];
-        if (next === '"' || next === "\\" || next === "$" || next === "`" || next === "'") {
+        if (next === '"' || next === "\\" || next === "$" || next === "`") {
           current += next;
           i++;
         } else {
@@ -64,44 +64,41 @@ function parseArgs(input) {
   return args;
 }
 
-function unescapeQuotesAndBackslashes(str) {
-  // Unescape \", \', and \\ only
-  return str.replace(/\\(["'\\])/g, "$1");
-}
-
 function findExecutable(command) {
-  if (
-    (command.startsWith('"') && command.endsWith('"')) ||
-    (command.startsWith("'") && command.endsWith("'"))
-  ) {
-    const outerQuote = command[0];
-    command = command.slice(1, -1);
-
-    if (outerQuote === '"') {
-      // Unescape only \" and \\ inside double quotes
-      command = command.replace(/\\(["\\])/g, "$1");
-      // Note: \' inside double quotes is literal (keep backslash)
+  let unquotedCommand = command;
+  
+  // Handle quoted commands
+  if ((command.startsWith('"') && command.endsWith('"')) || 
+      (command.startsWith("'") && command.endsWith("'"))) {
+    const quoteChar = command[0];
+    unquotedCommand = command.slice(1, -1);
+    
+    if (quoteChar === '"') {
+      // Inside double quotes, unescape only certain characters
+      unquotedCommand = unquotedCommand.replace(/\\(["\\])/g, '$1');
     }
-    // If single quotes, keep literal (no unescaping)
+    // For single quotes, no unescaping needed (everything is literal)
   }
 
-  if (command.includes("/") || command.includes("\\")) {
-    if (fs.existsSync(command) && fs.statSync(command).isFile()) {
-      return command;
+  // If the command contains path separators, treat as direct path
+  if (unquotedCommand.includes("/") || unquotedCommand.includes("\\")) {
+    if (fs.existsSync(unquotedCommand)) {
+      return unquotedCommand;
     }
     return null;
   }
 
+  // Search in PATH
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
-    const candidate = path.join(p, command);
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+    const candidate = path.join(p, unquotedCommand);
+    if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
+  
   return null;
 }
-
 
 // Builtin commands handlers
 function handleCd(dir) {
@@ -176,8 +173,14 @@ function prompt() {
         return;
       }
       try {
-        // execFileSync requires args without the command itself
-        const out = execFileSync(exePath, args.slice(1), { encoding: "utf-8", stdio: "pipe" });
+        // Use execSync to properly handle commands with spaces/special chars
+        const commandToRun = args.slice(1).length > 0 
+          ? `${exePath} ${args.slice(1).join(' ')}` 
+          : exePath;
+        const out = execSync(commandToRun, {
+          encoding: 'utf-8',
+          stdio: 'pipe'
+        });
         process.stdout.write(out);
       } catch (err) {
         if (err.stdout) process.stdout.write(err.stdout);
