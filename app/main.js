@@ -1,8 +1,7 @@
-const { exit } = require("process");
 const readline = require("readline");
+const { exit } = require("process");
 const path = require("path");
 const fs = require("fs");
-const os = require("os");
 const { execFileSync } = require("child_process");
 
 const rl = readline.createInterface({
@@ -10,7 +9,7 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
-const builtin = ["cd", "echo", "exit", "pwd", "type", "cat", "exe"];
+const builtin = ["cd", "echo", "exit", "pwd", "type"];
 
 function parseArgs(input) {
   const args = [];
@@ -32,10 +31,10 @@ function parseArgs(input) {
       if (char === "\\") {
         const next = input[i + 1];
         if (next === '"' || next === '\\' || next === '$' || next === '`') {
-          current += next;  // add literal escaped char (e.g. '"')
+          current += next;
           i++;
         } else {
-          current += char;  // add the backslash itself if not followed by special char
+          current += char;
         }
       } else if (char === '"') {
         inDouble = false;
@@ -58,19 +57,17 @@ function parseArgs(input) {
     }
     i++;
   }
-
   if (current.length > 0) {
     args.push(current);
   }
-
   return args;
 }
 
-
 function handleCd(inPath) {
   if (!inPath || inPath === "~") {
-    inPath = os.homedir();
+    inPath = process.env.HOME || "/home/user";
   }
+
   const newPath = path.resolve(process.cwd(), inPath);
   if (fs.existsSync(newPath) && fs.statSync(newPath).isDirectory()) {
     process.chdir(newPath);
@@ -84,13 +81,8 @@ function handleEcho(args) {
   return args.join(" ");
 }
 
-function handleExit(args) {
-  // Supports exit or exit 0, any other exit code can be extended here
-  if (args.length === 0 || args[0] === "0") {
-    exit(0);
-  } else {
-    exit(parseInt(args[0], 10) || 0);
-  }
+function handleExit() {
+  exit(0);
 }
 
 function handlePwd() {
@@ -103,18 +95,16 @@ function handleType(command) {
   } else {
     let exists = false;
     let finalPath = null;
-
     const paths = process.env.PATH.split(path.delimiter);
 
     for (const p of paths) {
-      const commandPath = path.join(p, command);
-      if (fs.existsSync(commandPath) && fs.statSync(commandPath).isFile()) {
+      const candidatePath = path.join(p, command);
+      if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile()) {
         exists = true;
-        finalPath = commandPath;
+        finalPath = candidatePath;
         break;
       }
     }
-
     if (exists) {
       return `${command} is ${finalPath}`;
     } else {
@@ -123,115 +113,69 @@ function handleType(command) {
   }
 }
 
-function handleCat(files) {
-  let data = "";
-  for (const file of files) {
-    try {
-      if (fs.existsSync(file)) {
-        data += fs.readFileSync(file, "utf-8");
-      } else {
-        data += `cat: ${file}: No such file or directory\n`;
-      }
-    } catch (err) {
-      data += `cat: error reading file ${file}: ${err.message}\n`;
+function findExecutable(command) {
+  // Remove surrounding quotes if any
+  const cleanCommand = command.replace(/^['"]|['"]$/g, "");
+  // If command is an absolute or relative path, check directly:
+  if (cleanCommand.includes("/") || cleanCommand.includes("\\")) {
+    if (fs.existsSync(cleanCommand) && fs.statSync(cleanCommand).isFile()) {
+      return cleanCommand;
     }
+    return null;
   }
-  return data;
-}
 
-function handleExe(files) {
-  // files is expected to be an array with one element - file path
-  if (files.length === 0) return "exe: missing file operand";
-  const file = files[0];
-  try {
-    if (fs.existsSync(file)) {
-      return fs.readFileSync(file, "utf-8");
-    } else {
-      return `exe: ${file}: No such file or directory`;
-    }
-  } catch (err) {
-    return `exe: error reading file ${file}: ${err.message}`;
-  }
-}
-
-function executeExternalCommand(command, args) {
+  // Otherwise, search in PATH folders
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
-    const fullPath = path.join(p, command);
-    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
-      try {
-        execFileSync(fullPath, args, { stdio: "inherit" });
-        return true;
-      } catch (e) {
-        console.error(e.message);
-        return true;
-      }
+    const candidate = path.join(p, cleanCommand);
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return candidate;
     }
   }
-  return false;
+  return null;
+}
+
+function executeCommand(command, args) {
+  const execPath = findExecutable(command);
+  if (!execPath) {
+    console.log(`${command}: command not found`);
+    return;
+  }
+  try {
+    const output = execFileSync(execPath, args, { stdio: "inherit" });
+  } catch (error) {
+    if (error.stdout) process.stdout.write(error.stdout);
+    if (error.stderr) process.stderr.write(error.stderr);
+  }
 }
 
 function prompt() {
-  rl.question("$ ", (answer) => {
-    if (!answer.trim()) {
-      prompt();
-      return;
-    }
+  rl.question("$ ", (input) => {
+    const args = parseArgs(input);
+    if (args.length === 0) return prompt();
 
-    const args = parseArgs(answer);
     const command = args[0];
-    const cmdArgs = args.slice(1);
-    let output = null;
+    const commandArgs = args.slice(1);
 
-    switch (command) {
-      case "exit":
-        handleExit(cmdArgs);
-        break;
-
-      case "cd":
-        output = handleCd(cmdArgs[0]);
-        break;
-
-      case "echo":
-        output = handleEcho(cmdArgs);
-        break;
-
-      case "pwd":
-        output = handlePwd();
-        break;
-
-      case "type":
-        output = handleType(cmdArgs[0]);
-        break;
-
-      case "cat":
-        if (cmdArgs.length === 0) {
-          output = "cat: missing file operand";
-        } else {
-          output = handleCat(cmdArgs);
-        }
-        break;
-
-      case "exe":
-        if (cmdArgs.length === 0) {
-          output = "exe: missing file operand";
-        } else {
-          output = handleExe(cmdArgs);
-        }
-        break;
-
-      default:
-        const executed = executeExternalCommand(command, cmdArgs);
-        if (!executed) {
-          output = `${command}: command not found`;
-        }
-        break;
+    if (command === "exit" && commandArgs[0] === "0") {
+      handleExit();
+    } else if (command === "cd") {
+      const err = handleCd(commandArgs[0]);
+      if (err) console.log(err);
+      prompt();
+    } else if (command === "echo") {
+      console.log(handleEcho(commandArgs));
+      prompt();
+    } else if (command === "pwd") {
+      console.log(handlePwd());
+      prompt();
+    } else if (command === "type") {
+      console.log(handleType(commandArgs[0]));
+      prompt();
+    } else {
+      executeCommand(command, commandArgs);
+      prompt();
     }
-
-    if (output !== null) {
-      console.log(output);
-    }
-    prompt();
   });
 }
 
