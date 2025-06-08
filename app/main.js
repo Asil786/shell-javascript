@@ -10,24 +10,64 @@ const rl = readline.createInterface({
 
 const builtins = ["echo", "exit", "type", "pwd", "cd"];
 
-// Parse input into args supporting single quotes
 function parseArgs(input) {
   const args = [];
   let current = "";
   let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let i = 0;
 
-  for (let i = 0; i < input.length; i++) {
+  while (i < input.length) {
     const char = input[i];
 
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      } else {
+        current += char;
+      }
+      i++;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+        i++;
+        continue;
+      }
+      if (char === '\\') {
+        const nextChar = input[i + 1];
+        if (nextChar === '\\' || nextChar === '"' || nextChar === '$' || nextChar === '\n') {
+          current += nextChar;
+          i += 2;
+        } else {
+          current += char;
+          i++;
+        }
+        continue;
+      }
+      current += char;
+      i++;
+      continue;
+    }
+
     if (char === "'") {
-      inSingleQuote = !inSingleQuote;
-    } else if (char === " " && !inSingleQuote) {
+      inSingleQuote = true;
+      i++;
+    } else if (char === '"') {
+      inDoubleQuote = true;
+      i++;
+    } else if (char === ' ') {
       if (current !== "") {
         args.push(current);
         current = "";
       }
+      i++;
+      while (input[i] === ' ') i++;
     } else {
       current += char;
+      i++;
     }
   }
 
@@ -107,7 +147,6 @@ const prompt = () => {
         }
       }
     } else if (builtins.includes(cmd)) {
-      // This covers builtins used incorrectly
       console.log(`${cmd}: shell builtin but invalid usage`);
     } else {
       const exePath = findExecutable(cmd);
@@ -123,7 +162,7 @@ const prompt = () => {
           prompt();
         });
 
-        return; // Wait for child to finish before prompting again
+        return;
       } else {
         console.log(`${cmd}: command not found`);
       }
