@@ -65,16 +65,17 @@ function parseArgs(input) {
 }
 
 function findExecutable(command) {
-  // If command is already quoted, we need to preserve the exact name
+  // Preserve the exact command if it's quoted
+  let unquotedCommand = command;
   if ((command.startsWith('"') && command.endsWith('"')) ||
       (command.startsWith("'") && command.endsWith("'"))) {
-    command = command.slice(1, -1);
+    unquotedCommand = command.slice(1, -1);
   }
 
   // If command contains path separators, treat as direct path
-  if (command.includes("/") || command.includes("\\")) {
-    if (fs.existsSync(command)) {
-      return command;
+  if (unquotedCommand.includes("/") || unquotedCommand.includes("\\")) {
+    if (fs.existsSync(unquotedCommand)) {
+      return unquotedCommand;
     }
     return null;
   }
@@ -82,7 +83,7 @@ function findExecutable(command) {
   // Search in PATH
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
-    const candidate = path.join(p, command);
+    const candidate = path.join(p, unquotedCommand);
     if (fs.existsSync(candidate)) {
       return candidate;
     }
@@ -155,9 +156,8 @@ function prompt() {
       handleType(args[1]);
       prompt();
     } else {
-      // For external commands, preserve the exact command string
-      let exePath = findExecutable(cmd);
-      
+      // Find the executable path
+      const exePath = findExecutable(cmd);
       if (!exePath) {
         console.log(`${cmd}: command not found`);
         prompt();
@@ -165,16 +165,10 @@ function prompt() {
       }
 
       try {
-        // Reconstruct the command with proper quoting
-        const fullCommand = args.map(arg => {
-          if (arg.includes(" ")) return `"${arg}"`;
-          return arg;
-        }).join(" ");
-
-        const out = execSync(fullCommand, {
+        // Execute the command directly without shell
+        const out = execSync(`"${exePath}"${args.length > 1 ? ' ' + args.slice(1).join(' ') : ''}`, {
           encoding: 'utf-8',
-          stdio: 'pipe',
-          shell: '/bin/bash'
+          stdio: 'pipe'
         });
         process.stdout.write(out);
       } catch (err) {
