@@ -12,7 +12,6 @@ const rl = readline.createInterface({
 
 const builtin = ["cd", "echo", "exit", "pwd", "type", "cat", "exe"];
 
-// Utility to parse shell-like arguments (handles quotes and escapes)
 function parseArgs(input) {
   const args = [];
   let current = "";
@@ -33,10 +32,10 @@ function parseArgs(input) {
       if (char === "\\") {
         const next = input[i + 1];
         if (next === '"' || next === '\\' || next === '$' || next === '`') {
-          current += next;
+          current += next;  // add literal escaped char (e.g. '"')
           i++;
         } else {
-          current += char;
+          current += char;  // add the backslash itself if not followed by special char
         }
       } else if (char === '"') {
         inDouble = false;
