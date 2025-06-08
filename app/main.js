@@ -78,11 +78,22 @@ function prompt(){
       cat(files);    
     } else if (commandType === "echo") {
       function parseArgs(input) {
-        const regex = /"([^"]*)"|'([^']*)'|(\S+)/g;
+        const regex = /"((?:\\.|[^"\\])*)"|'([^']*)'|(\S+)/g;
         const args = [];
         let match;
         while ((match = regex.exec(input)) !== null) {
-          args.push(match[1] || match[2] || match[3]);
+          if (match[1] !== undefined) {
+            // Double-quoted: unescape certain characters
+            args.push(
+              match[1]
+                .replace(/\\(["\\$])/g, "$1") // only \" \\ \$ are unescaped
+            );
+          } else if (match[2] !== undefined) {
+            // Single-quoted: leave as is
+            args.push(match[2]);
+          } else {
+            args.push(match[3]);
+          }
         }
         return args;
       }
@@ -90,14 +101,13 @@ function prompt(){
       const rawInput = answer.slice(5); // remove 'echo '
       const args = parseArgs(rawInput);
     
-      // Remove extra spacing if not needed (concatenate parts)
-      // Reconstruct with original spacing preserved between tokens
+      // Reconstruct output, preserving spacing between arguments
       let result = "";
       let lastIndex = 5;
       for (const arg of args) {
         const index = answer.indexOf(arg, lastIndex);
         if (index > lastIndex) {
-          result += answer.slice(lastIndex, index); // keep original spacing
+          result += answer.slice(lastIndex, index); // preserve spaces
         }
         result += arg;
         lastIndex = index + arg.length;
