@@ -1,72 +1,68 @@
-const readline = require("readline");
-const fs = require("fs");
-const path = require("path");
-const { spawnSync } = require("child_process");
+const readline = require("node:readline");
+const fs = require("node:fs");
+const { execSync } = require("node:child_process");
 
-const EXIT = 0;
-const SUCCESS = 1;
-const NOT_FOUND = -1;
-
-function exit(args) {
-  process.exit(0);
+/***
+ * Returns the file path of a command, if applicable. Otherwise false.
+ */
+function getAbsPath(cmd) {
+	const pathDirs = process.env.PATH.split(":");
+	for (dir of pathDirs) {
+		if (fs.existsSync(`${dir}/${cmd}`)) {
+			return `${dir}/${cmd}`;
+		}
+	}
+	return false;
 }
-
-function echo(args) {
-  console.log(args);
-  return SUCCESS;
-}
-
-function type(args) {
-  const command = args.trim();
-  if (BUILTIN_COMMANDS.hasOwnProperty(command)) {
-    console.log(`${command} is a shell builtin`);
-    return SUCCESS;
-  }
-
-  const pathDirs = process.env.PATH ? process.env.PATH.split(":") : [];
-  for (const dir of pathDirs) {
-    const filePath = path.join(dir, command);
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      console.log(`${command} is ${filePath}`);
-      return SUCCESS;
-    }
-  }
-
-  console.log(`${command}: not found`);
-  return NOT_FOUND;
-}
-
-const BUILTIN_COMMANDS = Object.freeze({
-  exit: exit,
-  echo: echo,
-  type: type,
-});
 
 const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
+	input: process.stdin,
+	output: process.stdout,
 });
 
-const prompt = () => {
-  rl.question("$ ", (input) => {
-    const [cmd, ...argsArr] = input.trim().split(" ");
-    const args = argsArr.join(" ");
+const commands = {
+	exit: (code) => {
+		rl.close();
+		process.exit(code ? Number.parseInt(code) : 0);
+	},
+	echo: (...rest) => {
+		console.log(...rest);
+	},
+	type: (command) => {
+		if (commands[command]) {
+			console.log(`${command} is a shell builtin`);
+			return;
+		}
 
-    if (BUILTIN_COMMANDS.hasOwnProperty(cmd)) {
-      BUILTIN_COMMANDS[cmd](args);
-    } else {
-      const result = spawnSync(cmd, argsArr, {
-        encoding: "utf-8",
-        stdio: "inherit",
-      });
+		// check path
+		const pathDirs = process.env.PATH.split(":");
+		for (dir of pathDirs) {
+			if (fs.existsSync(`${dir}/${command}`)) {
+				console.log(`${command} is ${dir}/${command}`);
+				return;
+			}
+		}
 
-      if (result.error && result.error.code === 'ENOENT') {
-        console.log(`${cmd}: command not found`);
-      }
-    }
-
-    prompt();
-  });
+		console.log(`${command}: not found`);
+		return;
+	},
+	pwd: () => console.log(process.cwd()),
 };
 
-prompt();
+function repl() {
+	rl.question("$ ", (answer) => {
+		const args = answer.split(" ");
+		const command = args[0];
+		if (commands[command]) {
+			commands[command](...args.slice(1));
+		} else if (getAbsPath(command)) {
+			const output = execSync(`${command} ${args.slice(1).join(" ")}`);
+			process.stdout.write(output);
+		} else {
+			console.log(`${answer}: command not found`);
+		}
+		repl();
+	});
+}
+
+repl();
