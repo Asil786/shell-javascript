@@ -3,6 +3,7 @@ const { exit } = require("process");
 const path = require("path");
 const fs = require("fs");
 const { execFileSync } = require("child_process");
+const os = require("os");
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -11,6 +12,7 @@ const rl = readline.createInterface({
 
 const builtin = ["cd", "echo", "exit", "pwd", "type"];
 
+// Parse input respecting quotes and escapes, returns array of args
 function parseArgs(input) {
   const args = [];
   let current = "";
@@ -30,7 +32,7 @@ function parseArgs(input) {
     } else if (inDouble) {
       if (char === "\\") {
         const next = input[i + 1];
-        if (next === '"' || next === '\\' || next === '$' || next === '`') {
+        if (next === '"' || next === "\\" || next === "$" || next === "`") {
           current += next;
           i++;
         } else {
@@ -63,71 +65,28 @@ function parseArgs(input) {
   return args;
 }
 
-function handleCd(inPath) {
-  if (!inPath || inPath === "~") {
-    inPath = process.env.HOME || "/home/user";
-  }
-
-  const newPath = path.resolve(process.cwd(), inPath);
-  if (fs.existsSync(newPath) && fs.statSync(newPath).isDirectory()) {
-    process.chdir(newPath);
-    return null;
-  } else {
-    return `cd: ${newPath}: No such file or directory`;
-  }
-}
-
-function handleEcho(args) {
-  return args.join(" ");
-}
-
-function handleExit() {
-  exit(0);
-}
-
-function handlePwd() {
-  return process.cwd();
-}
-
-function handleType(command) {
-  if (builtin.includes(command)) {
-    return `${command} is a shell builtin`;
-  } else {
-    let exists = false;
-    let finalPath = null;
-    const paths = process.env.PATH.split(path.delimiter);
-
-    for (const p of paths) {
-      const candidatePath = path.join(p, command);
-      if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile()) {
-        exists = true;
-        finalPath = candidatePath;
-        break;
-      }
-    }
-    if (exists) {
-      return `${command} is ${finalPath}`;
-    } else {
-      return `${command}: not found`;
-    }
-  }
-}
-
+// Find executable in PATH matching exact filename (handle quoted names with spaces/quotes)
 function findExecutable(command) {
-  // Remove surrounding quotes if any
-  const cleanCommand = command.replace(/^['"]|['"]$/g, "");
-  // If command is an absolute or relative path, check directly:
-  if (cleanCommand.includes("/") || cleanCommand.includes("\\")) {
-    if (fs.existsSync(cleanCommand) && fs.statSync(cleanCommand).isFile()) {
-      return cleanCommand;
+  // Strip only outer quotes if present
+  if (
+    (command.startsWith('"') && command.endsWith('"')) ||
+    (command.startsWith("'") && command.endsWith("'"))
+  ) {
+    command = command.slice(1, -1);
+  }
+
+  // If command contains path separators, check directly
+  if (command.includes("/") || command.includes("\\")) {
+    if (fs.existsSync(command) && fs.statSync(command).isFile()) {
+      return command;
     }
     return null;
   }
 
-  // Otherwise, search in PATH folders
+  // Search PATH dirs for exact file
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
-    const candidate = path.join(p, cleanCommand);
+    const candidate = path.join(p, command);
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       return candidate;
     }
@@ -135,45 +94,87 @@ function findExecutable(command) {
   return null;
 }
 
-function executeCommand(command, args) {
-  const execPath = findExecutable(command);
-  if (!execPath) {
-    console.log(`${command}: command not found`);
+// Builtin handlers
+function handleCd(dir) {
+  if (!dir || dir === "~") {
+    dir = os.homedir();
+  }
+  const newPath = path.resolve(process.cwd(), dir);
+  if (fs.existsSync(newPath) && fs.statSync(newPath).isDirectory()) {
+    process.chdir(newPath);
+  } else {
+    console.log(`cd: ${dir}: No such file or directory`);
+  }
+}
+
+function handleEcho(args) {
+  console.log(args.join(" "));
+}
+
+function handlePwd() {
+  console.log(process.cwd());
+}
+
+function handleType(cmd) {
+  if (builtin.includes(cmd)) {
+    console.log(`${cmd} is a shell builtin`);
     return;
   }
-  try {
-    const output = execFileSync(execPath, args, { stdio: "inherit" });
-  } catch (error) {
-    if (error.stdout) process.stdout.write(error.stdout);
-    if (error.stderr) process.stderr.write(error.stderr);
+  const exe = findExecutable(cmd);
+  if (exe) {
+    console.log(`${cmd} is ${exe}`);
+  } else {
+    console.log(`${cmd}: not found`);
+  }
+}
+
+function handleExit(args) {
+  if (args[1] === "0") {
+    exit(0);
+  } else {
+    exit(1);
   }
 }
 
 function prompt() {
   rl.question("$ ", (input) => {
+    if (!input.trim()) {
+      return prompt();
+    }
     const args = parseArgs(input);
-    if (args.length === 0) return prompt();
+    const cmd = args[0];
 
-    const command = args[0];
-    const commandArgs = args.slice(1);
-
-    if (command === "exit" && commandArgs[0] === "0") {
-      handleExit();
-    } else if (command === "cd") {
-      const err = handleCd(commandArgs[0]);
-      if (err) console.log(err);
+    if (cmd === "exit") {
+      handleExit(args);
+    } else if (cmd === "cd") {
+      handleCd(args[1]);
       prompt();
-    } else if (command === "echo") {
-      console.log(handleEcho(commandArgs));
+    } else if (cmd === "echo") {
+      handleEcho(args.slice(1));
       prompt();
-    } else if (command === "pwd") {
-      console.log(handlePwd());
+    } else if (cmd === "pwd") {
+      handlePwd();
       prompt();
-    } else if (command === "type") {
-      console.log(handleType(commandArgs[0]));
+    } else if (cmd === "type") {
+      handleType(args[1]);
       prompt();
     } else {
-      executeCommand(command, commandArgs);
+      // Execute external command
+      const exePath = findExecutable(cmd);
+      if (!exePath) {
+        console.log(`${cmd}: command not found`);
+        prompt();
+        return;
+      }
+      try {
+        // execFileSync requires args without the command itself
+        const out = execFileSync(exePath, args.slice(1), { encoding: "utf-8", stdio: "pipe" });
+        process.stdout.write(out);
+      } catch (err) {
+        if (err.stdout) process.stdout.write(err.stdout);
+        if (err.stderr) process.stderr.write(err.stderr);
+        else console.error(err.message);
+      }
       prompt();
     }
   });
