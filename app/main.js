@@ -32,7 +32,7 @@ function parseArgs(input) {
     } else if (inDouble) {
       if (char === "\\") {
         const next = input[i + 1];
-        if (next === '"' || next === "\\" || next === "$" || next === "`") {
+        if (next === '"' || next === '\\' || next === '$' || next === '`') {
           current += next;
           i++;
         } else {
@@ -66,6 +66,7 @@ function parseArgs(input) {
 
   return args;
 }
+
 
 function handleCd(inPath) {
   if (!inPath || inPath === "~") {
