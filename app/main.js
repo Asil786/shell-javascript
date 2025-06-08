@@ -12,7 +12,6 @@ const rl = readline.createInterface({
 
 const builtin = ["cd", "echo", "exit", "pwd", "type"];
 
-// Parse input respecting quotes and escapes, returns array of args
 function parseArgs(input) {
   const args = [];
   let current = "";
@@ -32,7 +31,7 @@ function parseArgs(input) {
     } else if (inDouble) {
       if (char === "\\") {
         const next = input[i + 1];
-        if (next === '"' || next === "\\" || next === "$" || next === "`") {
+        if (next === '"' || next === "\\" || next === "$" || next === "`" || next === "'") {
           current += next;
           i++;
         } else {
@@ -65,17 +64,24 @@ function parseArgs(input) {
   return args;
 }
 
-// Find executable in PATH matching exact filename (handle quoted names with spaces/quotes)
+
+function unescapeQuotesAndBackslashes(str) {
+  // Replace escaped quotes and backslashes with actual chars
+  return str.replace(/\\(["'\\])/g, "$1");
+}
+
 function findExecutable(command) {
-  // Strip only outer quotes if present
+  // Strip outer quotes if present
   if (
     (command.startsWith('"') && command.endsWith('"')) ||
     (command.startsWith("'") && command.endsWith("'"))
   ) {
     command = command.slice(1, -1);
+    command = unescapeQuotesAndBackslashes(command);
+  } else {
+    // Also unescape if no outer quotes? Depends on input, safer not to
   }
 
-  // If command contains path separators, check directly
   if (command.includes("/") || command.includes("\\")) {
     if (fs.existsSync(command) && fs.statSync(command).isFile()) {
       return command;
@@ -83,7 +89,6 @@ function findExecutable(command) {
     return null;
   }
 
-  // Search PATH dirs for exact file
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
     const candidate = path.join(p, command);
