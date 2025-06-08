@@ -77,6 +77,9 @@ function prompt(){
       }
       cat(files);    
     } else if(commandType === "echo"){
+      const args = parseArgs(answer.slice(5)); // remove "echo "
+      console.log(args.join(" "));
+      prompt();
       // const escSqs = ["\", "$", '"', "\n"];
       const echoText = answer.split("echo ");      
       if (echoText[1].startsWith("'")) {
