@@ -121,26 +121,33 @@ function handleType(command) {
 const { execFileSync } = require("child_process");
 
 function handleFile(answer) {
-  const args = parseArgs(answer);
-  const fileName = args[0];
+  const rawArgs = parseArgs(answer);
+  if (rawArgs.length === 0) return { isFile: false, fileResult: null };
+
+  let rawCommand = rawArgs[0];
+
+  // Remove surrounding quotes for lookup
+  const cleanCommand = rawCommand.replace(/^["']|["']$/g, "");
+
   const paths = process.env.PATH.split(":");
 
   for (const p of paths) {
-    const candidatePath = path.join(p, fileName);
+    const candidatePath = path.join(p, cleanCommand);
     if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile()) {
       try {
-        const result = execFileSync(candidatePath, args.slice(1), {
+        const result = execFileSync(candidatePath, rawArgs.slice(1), {
           stdio: "pipe",
         }).toString().trim();
         return { isFile: true, fileResult: result };
       } catch (e) {
-        return { isFile: true, fileResult: e.message };
+        return { isFile: true, fileResult: e.stderr?.toString() || e.message };
       }
     }
   }
 
   return { isFile: false, fileResult: null };
 }
+
 
 function prompt() {
   rl.question("$ ", (answer) => {
