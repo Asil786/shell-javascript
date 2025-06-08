@@ -2,7 +2,7 @@ const readline = require("readline");
 const { exit } = require("process");
 const path = require("path");
 const fs = require("fs");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const os = require("os");
 
 const rl = readline.createInterface({
@@ -65,17 +65,24 @@ function parseArgs(input) {
 }
 
 function findExecutable(command) {
-  // Preserve the exact command if it's quoted
+  // Preserve the exact command name including any quotes
   let unquotedCommand = command;
-  if ((command.startsWith('"') && command.endsWith('"')) ||
-      (command.startsWith("'") && command.endsWith("'"))) {
+  
+  // Remove only outer quotes, preserve inner quotes
+  if ((command.startsWith('"') && command.endsWith('"')) {
     unquotedCommand = command.slice(1, -1);
+    // Unescape escaped double quotes inside
+    unquotedCommand = unquotedCommand.replace(/\\"/g, '"');
+  } else if ((command.startsWith("'") && command.endsWith("'"))) {
+    unquotedCommand = command.slice(1, -1);
+    // Single quotes preserve everything literally
   }
 
   // If command contains path separators, treat as direct path
   if (unquotedCommand.includes("/") || unquotedCommand.includes("\\")) {
-    if (fs.existsSync(unquotedCommand)) {
-      return unquotedCommand;
+    const resolvedPath = path.resolve(process.cwd(), unquotedCommand);
+    if (fs.existsSync(resolvedPath)) {
+      return resolvedPath;
     }
     return null;
   }
@@ -165,8 +172,8 @@ function prompt() {
       }
 
       try {
-        // Execute the command directly without shell
-        const out = execSync(`"${exePath}"${args.length > 1 ? ' ' + args.slice(1).join(' ') : ''}`, {
+        // Execute the command directly with arguments
+        const out = execFileSync(exePath, args.slice(1), {
           encoding: 'utf-8',
           stdio: 'pipe'
         });
