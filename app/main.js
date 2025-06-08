@@ -76,43 +76,34 @@ function prompt(){
         files=answer.split('"').slice(1).filter(item => item !== "" && item !== " "); 
       }
       cat(files);    
-    } else if(commandType === "echo"){
-      
-      // const escSqs = ["\", "$", '"', "\n"];
-      const echoText = answer.split("echo ");      
-      if (echoText[1].startsWith("'")) {
-        const newText = echoText[1].replace(/[']/g, "");
-        console.log(newText);
-      } else if(echoText[1].startsWith('"')) {  
-        const echoText5 = echoText[1];
-        const parts = echoText5.split(/(?<=")\s+(?=")/g).join(" ");
-        const echoText2 = parts;
-        let result = '';
-        let i = 1;
-        while(i < echoText2.length - 1){   
-          let char =  echoText2[i];
-          if(char === '\\'){
-            const nextChar = echoText2[i+1];
-            if (nextChar === '\\' || nextChar === '"' || nextChar === '$' || nextChar === '\n'){
-              result += nextChar;
-              i += 2;
-            }else{
-              result += '\\';
-              i += 1; 
-            }
-          }else if(char === '"'){
-            i += 1; 
-          } else {
-            result += char;
-            i++;  
-          }
+    } else if (commandType === "echo") {
+      function parseArgs(input) {
+        const regex = /"([^"]*)"|'([^']*)'|(\S+)/g;
+        const args = [];
+        let match;
+        while ((match = regex.exec(input)) !== null) {
+          args.push(match[1] || match[2] || match[3]);
         }
-        console.log(result);
-      } else {
-        const newText1 = echoText[1].split(" ").filter(t => t !== "").join(" ");
-        const newText2 =newText1.split("\\").join("");
-        console.log(newText2);
+        return args;
       }
+    
+      const rawInput = answer.slice(5); // remove 'echo '
+      const args = parseArgs(rawInput);
+    
+      // Remove extra spacing if not needed (concatenate parts)
+      // Reconstruct with original spacing preserved between tokens
+      let result = "";
+      let lastIndex = 5;
+      for (const arg of args) {
+        const index = answer.indexOf(arg, lastIndex);
+        if (index > lastIndex) {
+          result += answer.slice(lastIndex, index); // keep original spacing
+        }
+        result += arg;
+        lastIndex = index + arg.length;
+      }
+    
+      console.log(result.trimEnd());
       prompt();
     } else if(commandType.slice(1,) == "exe"){
       const exeLst = answer.split(/['"]/g);
