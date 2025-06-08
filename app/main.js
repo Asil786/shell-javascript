@@ -118,6 +118,8 @@ function handleType(command) {
   }
 }
 
+const { execFileSync } = require("child_process");
+
 function handleFile(answer) {
   const args = parseArgs(answer);
   const fileName = args[0];
@@ -127,7 +129,7 @@ function handleFile(answer) {
     const candidatePath = path.join(p, fileName);
     if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile()) {
       try {
-        const result = execSync(args.map(arg => `"${arg}"`).join(" "), {
+        const result = execFileSync(candidatePath, args.slice(1), {
           stdio: "pipe",
         }).toString().trim();
         return { isFile: true, fileResult: result };
