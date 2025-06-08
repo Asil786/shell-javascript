@@ -66,9 +66,8 @@ function parseArgs(input) {
 
 function findExecutable(command) {
   // If command is already quoted, we need to preserve the exact name
-  if ((command.startsWith('"') && command.endsWith('"')) {
-    command = command.slice(1, -1).replace(/\\"/g, '"');
-  } else if ((command.startsWith("'") && command.endsWith("'"))) {
+  if ((command.startsWith('"') && command.endsWith('"')) ||
+      (command.startsWith("'") && command.endsWith("'"))) {
     command = command.slice(1, -1);
   }
 
@@ -156,19 +155,17 @@ function prompt() {
       handleType(args[1]);
       prompt();
     } else {
-      // For external commands, we need to preserve the exact command string
-      let exePath;
-      try {
-        // First try to find the exact command (with spaces/quotes)
-        exePath = findExecutable(cmd);
-        
-        if (!exePath) {
-          console.log(`${cmd}: command not found`);
-          prompt();
-          return;
-        }
+      // For external commands, preserve the exact command string
+      let exePath = findExecutable(cmd);
+      
+      if (!exePath) {
+        console.log(`${cmd}: command not found`);
+        prompt();
+        return;
+      }
 
-        // Reconstruct the full command with proper quoting
+      try {
+        // Reconstruct the command with proper quoting
         const fullCommand = args.map(arg => {
           if (arg.includes(" ")) return `"${arg}"`;
           return arg;
