@@ -65,25 +65,17 @@ function parseArgs(input) {
 }
 
 function findExecutable(command) {
-  let unquotedCommand = command;
-  
-  // Handle quoted commands
-  if ((command.startsWith('"') && command.endsWith('"')) || 
-      (command.startsWith("'") && command.endsWith("'"))) {
-    const quoteChar = command[0];
-    unquotedCommand = command.slice(1, -1);
-    
-    if (quoteChar === '"') {
-      // Inside double quotes, unescape only certain characters
-      unquotedCommand = unquotedCommand.replace(/\\(["\\])/g, '$1');
-    }
-    // For single quotes, no unescaping needed (everything is literal)
+  // If command is already quoted, we need to preserve the exact name
+  if ((command.startsWith('"') && command.endsWith('"')) {
+    command = command.slice(1, -1).replace(/\\"/g, '"');
+  } else if ((command.startsWith("'") && command.endsWith("'"))) {
+    command = command.slice(1, -1);
   }
 
-  // If the command contains path separators, treat as direct path
-  if (unquotedCommand.includes("/") || unquotedCommand.includes("\\")) {
-    if (fs.existsSync(unquotedCommand)) {
-      return unquotedCommand;
+  // If command contains path separators, treat as direct path
+  if (command.includes("/") || command.includes("\\")) {
+    if (fs.existsSync(command)) {
+      return command;
     }
     return null;
   }
@@ -91,16 +83,15 @@ function findExecutable(command) {
   // Search in PATH
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
-    const candidate = path.join(p, unquotedCommand);
+    const candidate = path.join(p, command);
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  
+
   return null;
 }
 
-// Builtin commands handlers
 function handleCd(dir) {
   if (!dir || dir === "~") {
     dir = os.homedir();
@@ -165,21 +156,28 @@ function prompt() {
       handleType(args[1]);
       prompt();
     } else {
-      // Execute external command
-      const exePath = findExecutable(cmd);
-      if (!exePath) {
-        console.log(`${cmd}: command not found`);
-        prompt();
-        return;
-      }
+      // For external commands, we need to preserve the exact command string
+      let exePath;
       try {
-        // Use execSync to properly handle commands with spaces/special chars
-        const commandToRun = args.slice(1).length > 0 
-          ? `${exePath} ${args.slice(1).join(' ')}` 
-          : exePath;
-        const out = execSync(commandToRun, {
+        // First try to find the exact command (with spaces/quotes)
+        exePath = findExecutable(cmd);
+        
+        if (!exePath) {
+          console.log(`${cmd}: command not found`);
+          prompt();
+          return;
+        }
+
+        // Reconstruct the full command with proper quoting
+        const fullCommand = args.map(arg => {
+          if (arg.includes(" ")) return `"${arg}"`;
+          return arg;
+        }).join(" ");
+
+        const out = execSync(fullCommand, {
           encoding: 'utf-8',
-          stdio: 'pipe'
+          stdio: 'pipe',
+          shell: '/bin/bash'
         });
         process.stdout.write(out);
       } catch (err) {
