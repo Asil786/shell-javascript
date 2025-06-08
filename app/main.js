@@ -1,68 +1,95 @@
-const readline = require("node:readline");
-const fs = require("node:fs");
-const { execSync } = require("node:child_process");
-
-/***
- * Returns the file path of a command, if applicable. Otherwise false.
- */
-function getAbsPath(cmd) {
-	const pathDirs = process.env.PATH.split(":");
-	for (dir of pathDirs) {
-		if (fs.existsSync(`${dir}/${cmd}`)) {
-			return `${dir}/${cmd}`;
-		}
-	}
-	return false;
-}
+const readline = require("readline");
+const fs = require("fs");
+const path = require("path");
+const { spawn } = require("child_process");
 
 const rl = readline.createInterface({
-	input: process.stdin,
-	output: process.stdout,
+  input: process.stdin,
+  output: process.stdout,
 });
 
-const commands = {
-	exit: (code) => {
-		rl.close();
-		process.exit(code ? Number.parseInt(code) : 0);
-	},
-	echo: (...rest) => {
-		console.log(...rest);
-	},
-	type: (command) => {
-		if (commands[command]) {
-			console.log(`${command} is a shell builtin`);
-			return;
-		}
+const builtins = ["echo", "exit", "type", "pwd", "cd"];
 
-		// check path
-		const pathDirs = process.env.PATH.split(":");
-		for (dir of pathDirs) {
-			if (fs.existsSync(`${dir}/${command}`)) {
-				console.log(`${command} is ${dir}/${command}`);
-				return;
-			}
-		}
-
-		console.log(`${command}: not found`);
-		return;
-	},
-	pwd: () => console.log(process.cwd()),
-};
-
-function repl() {
-	rl.question("$ ", (answer) => {
-		const args = answer.split(" ");
-		const command = args[0];
-		if (commands[command]) {
-			commands[command](...args.slice(1));
-		} else if (getAbsPath(command)) {
-			const output = execSync(`${command} ${args.slice(1).join(" ")}`);
-			process.stdout.write(output);
-		} else {
-			console.log(`${answer}: command not found`);
-		}
-		repl();
-	});
+function isExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-repl();
+function findExecutable(command) {
+  const pathDirs = process.env.PATH ? process.env.PATH.split(":") : [];
+  for (const dir of pathDirs) {
+    const fullPath = path.join(dir, command);
+    if (fs.existsSync(fullPath) && isExecutable(fullPath)) {
+      return fullPath;
+    }
+  }
+  return null;
+}
+
+const prompt = () => {
+  rl.question("$ ", (input) => {
+    const args = input.trim().split(/\s+/);
+    const cmd = args[0];
+    const cmdArgs = args.slice(1);
+
+    if (cmd === "exit" && args[1] === "0") {
+      process.exit(0);
+    } else if (cmd === "echo") {
+      console.log(cmdArgs.join(" "));
+    } else if (cmd === "pwd") {
+      console.log(process.cwd());
+    } else if (cmd === "cd") {
+      const targetPath = cmdArgs[0];
+      if (!targetPath) {
+        console.log("cd: missing operand");
+      } else {
+        try {
+          process.chdir(targetPath);
+        } catch (err) {
+          console.log(`cd: ${targetPath}: No such file or directory`);
+        }
+      }
+    } else if (cmd === "type") {
+      const target = cmdArgs[0];
+      if (!target) {
+        console.log("type: missing operand");
+      } else if (builtins.includes(target)) {
+        console.log(`${target} is a shell builtin`);
+      } else {
+        const exePath = findExecutable(target);
+        if (exePath) {
+          console.log(`${target} is ${exePath}`);
+        } else {
+          console.log(`${target}: not found`);
+        }
+      }
+    } else if (builtins.includes(cmd)) {
+      console.log(`${cmd}: shell builtin but invalid usage`);
+    } else {
+      const exePath = findExecutable(cmd);
+      if (exePath) {
+        const child = spawn(cmd, cmdArgs, { stdio: "inherit" });
+
+        child.on("error", (err) => {
+          console.error(`Failed to start: ${err}`);
+        });
+
+        child.on("close", () => {
+          prompt();
+        });
+
+        return;
+      } else {
+        console.log(`${cmd}: command not found`);
+      }
+    }
+
+    prompt();
+  });
+};
+
+prompt();
