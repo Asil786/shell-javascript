@@ -1,197 +1,165 @@
-const pathVariable = process.env.PATH;
-import {getFullPath} from "./utils/getFullPath.js";
-import {commandMap} from "./commandMap.js";
-import {execFileSync} from "child_process"
-import {getArgs} from "./utils/getArgs.js";
-const readline = require("readline");
 const { exit } = require("process");
+const readline = require("readline");
 const path = require("path");
 const fs = require("fs");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
+const os =require("os");
+//const { console } = require("inspector");
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-function askQuestion() {
-    rl.question("$ ", (answer) => {
-        let [command,...args] = getArgs(answer);
-        if(process.argv[2] === "debug"){
-            console.log(`Command: ${command}`);
-            console.log(args);
-        }
-        if(commandMap.has(command)){
-            commandMap.get(command)(command, args);
-        }else{
-            try {
-                let destPath = getFullPath(command);
-                if(destPath === ""){
-                    throw new Error("Command not found");
-                }
-                execFileSync( command, args, {stdio: 'inherit',encoding: 'utf-8'});
-            } catch (error) {
-                console.log(`${answer}: command not found`);
-            }
-        }
-        askQuestion();
-    });
-}
-
-
-askQuestion();
-const builtin = ["cd", "echo", "exit", "pwd", "type"];
-
-function handleCd(inPath) {
-  if (inPath === "~") {
-    inPath = process.env.HOME || "/home/user";
-  }
-
-  const newPath = path.resolve(process.cwd(), inPath);
-  if (fs.existsSync(newPath) && fs.statSync(newPath).isDirectory()) {
-    process.chdir(newPath);
-    return null;
-  } else {
-    return `cd: ${newPath}: No such file or directory`;
-  }
-}
-
-function handleEcho(text) {
-  // const hasSingleQuote = text.startsWith("'");
-  // const slices = hasSingleQuote ? text.split("'") : text.split('"');
-  // const n = slices.length;
-  // if (n >= 3 && slices[0] === "" && slices[n - 1] === "") {
-  //   return slices.slice(1, n - 1).map(item => item !== "" && item.trim() === "" ? " " : item).join("");
-  // }
-
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let escaped = false;
-  let output = "";
-
-  const escapeSequences = ["\\", "$", '"', "\n"];
-
-  for (let i = 0; i < text.length; i++) {
-    let char = text[i];
-
-    if (escaped) {
-      output += char;
-      escaped = false;
-    } else if (
-      (char === "\\" && !inSingleQuote) ||
-      (char === "\\" && inDoubleQuote && escapeSequences.includes(text[i + 1]))
-    ) {
-      escaped = true;
-    } else if (char === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-    } else if (char === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-    } else {
-      if (inSingleQuote || inDoubleQuote || char !== " ") {
-        output += char;
-      } else {
-        if (output[output.length - 1] !== " ") {
-          output += " ";
-        }
+function cat(files){
+  var data = "";
+  let filesLen = 0;
+  while(filesLen < files.length ){  
+    try{
+      if(fs.existsSync(files[filesLen])){
+        data += (fs.readFileSync(files[filesLen], "utf-8"));
+      }else{
+        data += "File does not exists.";
       }
+    }catch(err){
+      data += `Error reading file ${files[filesLen]}:`, err;
+      return;
     }
-    // console.log("char: " + char)
-    // console.log("escaped: " + escaped)
-    // console.log("quote: " + inDoubleQuote)
+    filesLen += 1;
   }
-
-  // text = text.replace(/\s+/g, " ");
-
-  return output;
+  process.stdout.write(data);
+  prompt();  
 }
 
-function handleExit() {
-  exit(0);
-}
 
-function handlePwd() {
-  return process.cwd();
-}
 
-function handleType(command) {
-  if (builtin.includes(command)) {
-    return `${command} is a shell builtin`;
-  } else {
-    let exists = false;
-    let finalPath = null;
 
-    const paths = process.env.PATH.split(":");
-
-    for (const p of paths) {
-      const commandPath = path.join(p, command);
-      if (fs.existsSync(commandPath) && fs.statSync(commandPath).isFile()) {
-        exists = true;
-        finalPath = commandPath;
-        break;
-      }
-    }
-
-    if (exists) {
-      return `${command} is ${finalPath}`;
-    } else {
-      return `${command}: not found`;
-    }
-  }
-}
-
-function handleFile(answer) {
-  const fileName = answer.split(" ")[0];
-  const args = answer.split(fileName + " ")[1];
-  const paths = process.env.PATH.split(":");
-
-  let filePath;
-  for (const p of paths) {
-    // pToCheck = path.join(p, fileName);
-    if (fs.existsSync(p) && fs.readdirSync(p).includes(fileName)) {
-      // execFileSync(fileName, args, { encoding: 'utf-8', stdio: 'inherit' });
-      filePath = p;
-      break;
-    } else {
-      filePath = null;
-    }
-  }
-
-  if (filePath) {
-    output = execSync(answer).toString().trim();
-    return { isFile: true, fileResult: output };
-  }
-  return { isFile: false, fileResult: null };
-}
-
-function prompt() {
+function prompt(){
   rl.question("$ ", (answer) => {
-    let result = null;
-    if (answer === "exit 0") {
-      handleExit();
-    } else if (answer.startsWith("cd ")) {
-      const inPath = answer.split("cd ")[1];
-      result = handleCd(inPath);
-    } else if (answer.startsWith("echo ")) {
-      const text = answer.split("echo ")[1];
-      result = handleEcho(text);
-    } else if (answer === "pwd") {
-      result = handlePwd();
-    } else if (answer.startsWith("type")) {
-      const command = answer.split("type ")[1];
-      result = handleType(command);
-    } else {
-      let { isFile, fileResult } = handleFile(answer);
-      if (!isFile) {
-        result = `${answer}: command not found`;
-      } else {
-        result = fileResult;
+    const inLst  = ['echo','exit','type','pwd'];
+    const paths = process.env.PATH.split(":");
+    const [commandType, text] = answer.split(" ");
+    const args = answer.split(" ").slice(1);
+    const targetPath = paths.filter((path) => fs.existsSync(`${path}/${text}`))
+    let found = false;
+    if (answer == "exit 0"){
+      exit(0);
+    } else if(answer == "pwd"){
+      console.log(process.cwd());
+      prompt();
+    } else if(commandType == "cd"){
+      if (text.startsWith(".")){
+        const filePath = path.join(process.cwd(), text);
+        try {
+          process.chdir(filePath);
+        } catch {
+          console.log(`cd: ${filePath}: No such file or directory`);
+        }
+        prompt();                
+      }else if(text == "~"){
+        process.chdir(os.homedir());
+        prompt();
+      }else{
+        if (fs.existsSync(text) && fs.statSync(text).isDirectory()) {
+          process.chdir(text);
+        } else {
+          console.log(`cd: ${text}: No such file or directory`);
+        }
+        prompt();
       }
+    } else if(commandType === "cat"){
+      const catText = answer.split("cat ");
+      let files = []
+      if(catText[1].startsWith("'")){
+        files=answer.split("'").slice(1).filter(item => item !== '' && item !== ' '); 
+      }else{
+        files=answer.split('"').slice(1).filter(item => item !== "" && item !== " "); 
+      }
+      cat(files);    
+    } else if(commandType === "echo"){
+      // const escSqs = ["\", "$", '"', "\n"];
+      const echoText = answer.split("echo ");      
+      if (echoText[1].startsWith("'")) {
+        const newText = echoText[1].replace(/[']/g, "");
+        console.log(newText);
+      } else if(echoText[1].startsWith('"')) {  
+        const echoText5 = echoText[1];
+        const parts = echoText5.split(/(?<=")\s+(?=")/g).join(" ");
+        const echoText2 = parts;
+        let result = '';
+        let i = 1;
+        while(i < echoText2.length - 1){   
+          let char =  echoText2[i];
+          if(char === '\\'){
+            const nextChar = echoText2[i+1];
+            if (nextChar === '\\' || nextChar === '"' || nextChar === '$' || nextChar === '\n'){
+              result += nextChar;
+              i += 2;
+            }else{
+              result += '\\';
+              i += 1; 
+            }
+          }else if(char === '"'){
+            i += 1; 
+          } else {
+            result += char;
+            i++;  
+          }
+        }
+        console.log(result);
+      } else {
+        const newText1 = echoText[1].split(" ").filter(t => t !== "").join(" ");
+        const newText2 =newText1.split("\\").join("");
+        console.log(newText2);
+      }
+      prompt();
+    } else if(commandType.slice(1,) == "exe"){
+      const exeLst = answer.split(/['"]/g);
+      const files = exeLst[exeLst.length - 1].trim();
+      // console.log(files);
+      try{
+        if(fs.existsSync(files)){
+          data = (fs.readFileSync(files, "utf-8"));
+        }else{
+          data = "File does not exists.";
+        }
+      }catch(err){
+        data = `Error reading file ${files[filesLen]}:`, err;
+        return;
+      }
+      process.stdout.write(data);
+      prompt();
+    } else if(answer.startsWith('type ')){ 
+      if(inLst.includes(text)){
+        console.log(`${text} is a shell builtin`);
+      } else{
+        for(const pathEnv of paths){
+          let destPath = path.join(pathEnv, text);
+          if(fs.existsSync(destPath) && fs.statSync(destPath).isFile() && !found){
+            console.log(`${text} is ${destPath}`);
+            found = true;
+          }
+        }
+        if(!found){
+          console.log(`${text}: not found`);
+        } 
+      }
+      prompt();
+    } else if(!targetPath.length) {
+      found = false;
+      for(const pathEnv of paths){
+        let destPath = path.join(pathEnv, commandType);
+        if(fs.existsSync(destPath) && fs.statSync(destPath).isFile() && !found){
+          found = true;
+          execFileSync(commandType, args, { encoding: 'utf-8', stdio: 'inherit'});
+        }
+      } 
+      if(!found){
+        console.log(`${answer}: command not found`);
+        prompt();
+      }
+      prompt();
     }
-
-    result && console.log(result);
-
-    prompt();
   });
 }
-
 prompt();
