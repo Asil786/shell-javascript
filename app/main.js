@@ -64,24 +64,22 @@ function parseArgs(input) {
   return args;
 }
 
-
 function unescapeQuotesAndBackslashes(str) {
-  // Replace escaped quotes and backslashes with actual chars
+  // Unescape \", \', and \\ only
   return str.replace(/\\(["'\\])/g, "$1");
 }
 
 function findExecutable(command) {
-  // Strip outer quotes if present
+  // Remove exactly one pair of outer quotes if present, then unescape inside
   if (
     (command.startsWith('"') && command.endsWith('"')) ||
     (command.startsWith("'") && command.endsWith("'"))
   ) {
     command = command.slice(1, -1);
     command = unescapeQuotesAndBackslashes(command);
-  } else {
-    // Also unescape if no outer quotes? Depends on input, safer not to
   }
 
+  // If command contains a slash, check file existence directly
   if (command.includes("/") || command.includes("\\")) {
     if (fs.existsSync(command) && fs.statSync(command).isFile()) {
       return command;
@@ -89,6 +87,7 @@ function findExecutable(command) {
     return null;
   }
 
+  // Otherwise, search in PATH dirs for executable file matching exact name
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
     const candidate = path.join(p, command);
@@ -99,7 +98,7 @@ function findExecutable(command) {
   return null;
 }
 
-// Builtin handlers
+// Builtin commands handlers
 function handleCd(dir) {
   if (!dir || dir === "~") {
     dir = os.homedir();
