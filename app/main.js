@@ -1,4 +1,6 @@
 const readline = require("readline");
+const fs = require("fs");
+const path = require("path");
 
 const INVALID_ARGS = -2;
 const NOT_FOUND = -1;
@@ -19,10 +21,22 @@ function type(args) {
   const command = args.trim();
   if (BUILTIN_COMMANDS.hasOwnProperty(command)) {
     console.log(`${command} is a shell builtin`);
-  } else {
-    console.log(`${command}: not found`);
+    return SUCCESS;
   }
-  return SUCCESS;
+
+  // Search in PATH directories
+  const pathDirs = process.env.PATH ? process.env.PATH.split(":") : [];
+
+  for (const dir of pathDirs) {
+    const filePath = path.join(dir, command);
+    if (fs.existsSync(filePath)) {
+      console.log(`${command} is ${filePath}`);
+      return SUCCESS;
+    }
+  }
+
+  console.log(`${command}: not found`);
+  return NOT_FOUND;
 }
 
 const BUILTIN_COMMANDS = Object.freeze({
