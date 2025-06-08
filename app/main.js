@@ -70,16 +70,21 @@ function unescapeQuotesAndBackslashes(str) {
 }
 
 function findExecutable(command) {
-  // Remove exactly one pair of outer quotes if present, then unescape inside
   if (
     (command.startsWith('"') && command.endsWith('"')) ||
     (command.startsWith("'") && command.endsWith("'"))
   ) {
+    const outerQuote = command[0];
     command = command.slice(1, -1);
-    command = unescapeQuotesAndBackslashes(command);
+
+    if (outerQuote === '"') {
+      // Unescape only \" and \\ inside double quotes
+      command = command.replace(/\\(["\\])/g, "$1");
+      // Note: \' inside double quotes is literal (keep backslash)
+    }
+    // If single quotes, keep literal (no unescaping)
   }
 
-  // If command contains a slash, check file existence directly
   if (command.includes("/") || command.includes("\\")) {
     if (fs.existsSync(command) && fs.statSync(command).isFile()) {
       return command;
@@ -87,7 +92,6 @@ function findExecutable(command) {
     return null;
   }
 
-  // Otherwise, search in PATH dirs for executable file matching exact name
   const paths = process.env.PATH.split(path.delimiter);
   for (const p of paths) {
     const candidate = path.join(p, command);
@@ -97,6 +101,7 @@ function findExecutable(command) {
   }
   return null;
 }
+
 
 // Builtin commands handlers
 function handleCd(dir) {
